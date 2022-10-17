@@ -1,0 +1,215 @@
+        public CreatePMCaseResponse CreateCase(PMRequestParam requestParam)
+
+        {
+            var accessToken = new AccessTokenParams();
+            AccessToken aToken = this.PMAccessToken();
+            if (aToken == null || aToken.error != null)
+            {
+                ErrorReport error = new ErrorReport { code = HttpStatusCode.Unauthorized + "", error_description = "You are not allowed to perform this operation", message = "Access Denied!!" };
+                CreatePMCaseResponse cpmr = new CreatePMCaseResponse { error = error };
+
+                //return Unauthorized(new CreatePMCaseResponse {error = new ErrorReport { code = Unauthorized()} });
+                return cpmr;
+            }
+            else
+            {
+                RestClient client = new RestClient(GetAppSettingByKey("PMIP"));
+                var request = new RestRequest("api/1.0/" + PMServerParams.workspace + "/cases/impersonate", Method.POST) { RequestFormat = DataFormat.Json };
+                string variables = "";
+                foreach (CaseVariable caseV in requestParam.caseVariables.caseVariable)
+                {
+                    
+                    variables = variables + "\"" + caseV.VariableName + "\":\"" + caseV.VariableValue + "\"" + ",";
+                }
+                if (requestParam.caseVariables.gridVariable != null)
+                {
+                    foreach (CaseVariable2   caseV2 in requestParam.caseVariables.gridVariable)
+                    {
+                        if (caseV2.VariableValues != null)
+                        {
+                            int index = 0;
+                            string gridText = "\"" + caseV2.VariableName + "\":{";
+                            foreach (List<CaseVariable> cvList in caseV2.VariableValues)
+                            {
+                                index++;
+                                string rowText = "\"" + index + "\" : {";
+                                foreach (CaseVariable cv in cvList)
+                                {
+                                    
+                                    rowText = rowText + "\"" + cv.VariableName + "\" : \"" + cv.VariableValue + "\",";
+                                }
+                                if (rowText.LastIndexOf(",") >= 0)
+                                {
+                                    rowText = rowText.Remove(rowText.LastIndexOf(","));
+                                }
+
+                                rowText = rowText + "},";
+                                gridText = gridText + rowText;
+                            }
+                            if (gridText.LastIndexOf(",") >= 0)
+                            {
+                                gridText = gridText.Remove(gridText.LastIndexOf(","));
+                            }
+
+                            gridText = gridText + "}";
+                            variables = variables + gridText + ",";
+                        }
+                    }
+                }
+                if (variables.LastIndexOf(",") >= 0)
+                {
+                    variables = variables.Remove(variables.LastIndexOf(","));
+                }
+
+                string pData = "{\"pro_uid\":\"" + requestParam.pro_uid + "\",\"tas_uid\":\"" + requestParam.tas_uid + "\",\"usr_uid\":\"" + accessToken.usr_uid + "\",\"variables\":[{" + variables + "}]}";
+                request.AddParameter("application/json", pData, ParameterType.RequestBody);
+                //request.AddJsonBody(variables);
+                request.AddHeader("Authorization", "Bearer " + aToken.access_token);
+                var response = client.Execute<CreatePMCaseResponse>(request);
+                CreatePMCaseResponse creatPMResponse = response.Data;
+                string status = response.StatusCode.ToString();
+                bool isOK = false;
+                if (status == "OK")
+                {
+                    isOK = true;
+                    //execute the triggers before and after form here
+                    if (requestParam.triggers != null)
+                    {
+                        foreach (string trigger in requestParam.triggers)
+                        {
+                            var request1 = new RestRequest("api/1.0/" + PMServerParams.workspace + "/cases/" + creatPMResponse.app_uid + "/execute-trigger/" + trigger, Method.PUT) { RequestFormat = DataFormat.Json };
+                            request1.AddHeader("Authorization", "Bearer " + aToken.access_token);
+                            var myRest = client.Execute(request1);
+                            var scode = myRest.StatusDescription;
+                        }
+                    }
+                    if (requestParam.caseVariables != null && requestParam.caseVariables.fileVariables != null)
+                    {
+                        string updateString = "";
+                        string fieldUpdateString = "";
+                        foreach (CaseVariable3 caseV3 in requestParam.caseVariables.fileVariables)
+                        {
+                            if (caseV3 != null && caseV3.VariableValues != null)
+                            {
+                                int index = 0;
+                                int index1 = 0;
+                                string fileText = "\"" + caseV3.FileVariableName + "\": {";
+                                string fieldText = "\"" + caseV3.FileVariableName + "\": {";
+                                foreach (List<FileVariable> cv3List in caseV3.VariableValues)
+                                {
+                                    if(cv3List != null) { 
+                                        index++;
+                                        //fileText = fileText + "[";
+                                        string rowText = "\"" + index + "\" : {";
+                                        string fieldRowText = "\"" + index1 + "\" : {";
+                                        foreach (FileVariable fileV in cv3List)
+                                        {
+                                            FileUploadResponse fileRes = new FileUploadResponse();
+                                            if (fileV != null) { 
+                                               if(caseV3.docUid == null)
+                                                {
+                                                    fileRes = this.UploadFile(creatPMResponse.app_uid, "", fileV.FieldName, fileV.FileName, aToken.access_token);
+                                                }
+                                                else
+                                                {
+                                                    fileRes = this.UploadFileWithDocUid(creatPMResponse.app_uid, "", fileV.FieldName, fileV.FileName, aToken.access_token, caseV3.docUid);
+                                                }
+                                                if (fileRes != null && fileRes.appDocUid != null)
+                                                {
+                                                    //Console.WriteLine("this is to test some: "+fileRes.appDocUid);
+
+                                                    rowText = rowText + "\"contentType\" : \"" + fileV.ContentType + "\",";
+                                                    rowText = rowText + "\"extension\" : \"" + fileV.Extension + "\",";
+                                                    rowText = rowText + "\"fileName\" : \"" + fileV.FileName + "\",";
+                                                    rowText = rowText + "\"content\" : \"" + fileV.FileContent + "\",";
+                                                    rowText = rowText + "\"appDocUID\" : \"" + fileRes.appDocUid + "\",";
+
+
+
+                                                    fieldRowText = fieldRowText + "\"appDocUid\" : \"" + fileRes.appDocUid + "\",";
+                                                    fieldRowText = fieldRowText + "\"name\" : \"" + fileV.FileName + "\",";
+                                                    fieldRowText = fieldRowText + "\"version\" : \"" + fileRes.docVersion + "\",";
+                                                }
+                                            }
+                                        }
+                                        if (rowText.LastIndexOf(",") >= 0)
+                                        {
+                                            rowText = rowText.Remove(rowText.LastIndexOf(","));
+                                        }
+
+                                        rowText = rowText + "},";
+                                        fileText = fileText + rowText;
+                                        if (fieldRowText.LastIndexOf(",") >= 0)
+                                        {
+                                            fieldRowText = fieldRowText.Remove(fieldRowText.LastIndexOf(","));
+                                        }
+
+                                        fieldRowText = fieldRowText + "},";
+
+                                        fieldText = fieldText + fieldRowText;
+                                        index1++;
+                                    }
+                                }
+                                if (fileText.LastIndexOf(",") >= 0)
+                                {
+                                    fileText = fileText.Remove(fileText.LastIndexOf(","));
+                                }
+
+
+                                fileText = fileText + "},";
+                                updateString = updateString + fileText;
+
+                                if (fieldText.LastIndexOf(",") >= 0)
+                                {
+                                    fieldText = fieldText.Remove(fieldText.LastIndexOf(","));
+                                }
+
+                                fieldText = fieldText + "},";
+                                fieldUpdateString = fieldUpdateString + fieldText;
+                            }
+                        }
+                        if (updateString != "" && updateString.LastIndexOf(",") >= 0)
+                        {
+                            updateString = updateString.Remove(updateString.LastIndexOf(","));
+
+                        }
+                        updateString = "{" + updateString + "}";
+                        if (fieldUpdateString != "" && fieldUpdateString.LastIndexOf(",") >= 0)
+                        {
+                            fieldUpdateString = fieldUpdateString.Remove(fieldUpdateString.LastIndexOf(","));
+
+                        }
+                        fieldUpdateString = "{" + fieldUpdateString + "}";
+                        //update file array form field in processmaker
+                        var updateVarRequest = new RestRequest("sysworkflow/en/neoclassic/7887676085a7c74dc05e1c8004757985/trysomephp.php", Method.POST) { RequestFormat = DataFormat.Json };
+                        //updateVarRequest.AddHeader("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8");
+                        updateVarRequest.AddParameter("sentFiles", updateString, ParameterType.GetOrPost);
+                        updateVarRequest.AddParameter("caseID", creatPMResponse.app_uid, ParameterType.GetOrPost);
+                        //updateVarRequest.AddParameter("sentFiles",  updateString, ParameterType.RequestBody);
+                        //updateVarRequest.AddHeader("Authorization", "Bearer " + aToken.access_token);
+                        var updateVarResponse = client.Execute(updateVarRequest);
+                        string status2 = "status 2: " + updateVarResponse.StatusCode.ToString();
+
+
+                        //update the file variable in processmaker
+                        var filefieldRequest = new RestRequest("api/1.0/" + PMServerParams.workspace + "/cases/" + creatPMResponse.app_uid + "/variable", Method.PUT) { RequestFormat = DataFormat.Json };
+                        filefieldRequest.AddHeader("Authorization", "Bearer " + aToken.access_token);
+                        filefieldRequest.AddParameter("application/json", fieldUpdateString, ParameterType.RequestBody);
+                        var fileUpdateResponse = client.Execute(filefieldRequest);
+                        string fileUpdateStatus = fileUpdateResponse.StatusCode.ToString();
+                    }
+
+                    //route the case to next user
+                    var routeCaseRequest = new RestRequest("api/1.0/" + PMServerParams.workspace + "/cases/" + creatPMResponse.app_uid + "/route-case", Method.PUT) { RequestFormat = DataFormat.Json };
+                    //request.Resource = "api/1.0/" + PMServerParams.workspace + "/cases/" + requestParam.app_uid + "/route-case";
+                    routeCaseRequest.AddHeader("Authorization", "Bearer " + aToken.access_token);
+
+                    //request.AddParameter("application/json", "", ParameterType.RequestBody);
+                    var response1 = client.Execute(routeCaseRequest);
+                    status = "status 1: " + response1.StatusCode.ToString();
+                    //return Ok(creatPMResponse);
+
+                }
+                return creatPMResponse;
+            }
+        }
