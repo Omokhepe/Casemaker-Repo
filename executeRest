@@ -1,0 +1,55 @@
+<?php
+      function executeREST($url, $method = 'GET', $data = array(), $accessToken = ''){
+//        $system_max_time = ini_get("max_execution_time");
+//        ini_set('max_execution_time', '0');
+        $curl = curl_init($url);
+        curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 300);
+        curl_setopt($curl, CURLOPT_TIMEOUT, 300);
+        if($accessToken != ''){
+          curl_setopt($curl, CURLOPT_HTTPHEADER, array("Authorization: Bearer " . $accessToken));
+        }
+        else{
+          curl_setopt($ch, CURLOPT_HTTPHEADER, array( "Content-Type: application/json" ) );
+        }
+    
+        if($method == 'POST'){
+          curl_setopt($curl, CURLOPT_POST, true);
+          curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data));
+        }
+    
+        if($method == 'PUT'){
+          curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "PUT");
+          curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data));
+        }
+    
+        if($method == 'DELETE'){
+          curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
+          curl_setopt($curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+        }
+    
+        $curl_response = curl_exec($curl);
+        //var_dump($curl_response);
+  		if($errno = curl_errno($curl)) {
+  			$error_message = curl_strerror($errno);
+  			//echo "cURL error ({$errno}):\n {$error_message}";
+        $decoded['error']['message'] = $error_message;
+  //      ini_set('max_execution_time', $system_max_time);
+  		}else{
+
+        if(strpos($url, 'InsertCustomerOnboardingPM') !== false){
+          $decoded = $curl_response;
+        }  
+        else{
+          $decoded = json_decode($curl_response, true);
+          $decoded['response_code'] = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        }
+          
+  //        ini_set('max_execution_time', $system_max_time);
+          curl_close($curl);
+      }
+
+        return $decoded;
+      }
+    ?>
+
